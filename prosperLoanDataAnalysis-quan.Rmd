@@ -1,0 +1,547 @@
+---
+title: "Prosper Loan Data Analysis"
+author: "quanzone"
+date: "2018年9月19日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(fig.path = 'Figs/', echo = FALSE, 
+                      warning = FALSE, message = FALSE)
+```
+
+
+### **加载R语言包**
+```{r echo = TRUE}
+suppressMessages(library(devtools))
+suppressMessages(library(ggplot2))
+suppressMessages(library(ggthemes))
+suppressMessages(library(dplyr))
+suppressMessages(library(pastecs))
+suppressMessages(library(gridExtra))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(GGally))
+```
+
+### **数据导入**
+```{r prosperLoanData, echo=TRUE}
+loanData <- read.csv('prosperLoanData.csv')
+```
+
+### **Prosper公司介绍**
+Prosper，于2006年2月5日上线，是美国第一家P2P借贷平台。目前有超过220万名注册会员和超过20亿美元的交易额。借款人通过Prosper寻求个人贷款，贷款额度为2000-35000美元，期限为1年、3年或5年，贷款利率根据借款人的Prosper评级等确定；投资者（包括个人和机构）可以购买贷款关联的票据进行出借，最低出借金额为25美元；平台负责借款人的信用审核、贷款资金发放和追讨等，并将借款人还款转给投资者，向借款人一次性收取服务费，向投资者收取管理年费。
+
+
+```{r}
+# 查看各个变量的属性
+str(loanData)
+```
+
+
+
+
+
+# **单变量分析**
+  
+原始数据包含81个变量和113937个观测值。在数据集中探索以下变量：  
+1. Term : Amount of month customers opted for loan   
+2. LoanStatus : Current status of the loan like chargedoff, completed, defauted etc...   
+3. ProsperScore : Risk Factor score from 1 to 10. 10 being least risky   
+4. BorrowerAPR : The Borrower's Annual Percentage Rate (APR) for the loan.   
+5. BorrowerRate : The Borrower's interest rate for this loan.   
+6. ProsperRating..Alpha. : Prosper rating for borrowers in alphabets  
+7. StatedMonthlyIncome : Monthly income of the borrower  
+8. MonthlyLoanPayment : Monthly loan payment amount  
+9. DebtToIncomeRatio : The debt to income ratio of the borrower at the time the credit profile was pulled.  
+10. LoanOriginalAmount : Original amount of the loan  
+  
+
+
+
+数据中包含很多评级相关的变量，这让我好奇这些评级对客户贷款有哪些影响？对借款人而言，他们更关心两类变量：贷款额度和贷款利率，下面进一步分析各个变量间的关系  
+
+```{r}
+# 不同评级分布
+df_rating <- loanData %>%
+    group_by(ProsperRating..Alpha.) %>%
+    summarise(n = n()) %>%
+    mutate(freq = n / sum(n) * 100) %>%
+    arrange(ProsperRating..Alpha.)
+
+df_rating$ProsperRating..Alpha. <- ordered(df_rating$ProsperRating..Alpha.,
+                                           levels = c("AA","A","B","C","D","E","HR","NA")) 
+
+ggplot(aes(x = ProsperRating..Alpha., y = freq, fill = freq), data = df_rating) +
+    geom_bar(stat = 'identity', position="dodge") +
+    theme_pander() +
+    scale_fill_continuous(low = 'deepskyblue1', high = 'dodgerblue4') +
+    guides(fill = FALSE) +
+    geom_text(aes(label = sprintf("%2.1f%%", round(freq, 2))),
+                  color = "black", size = 5, nudge_y = 1) +
+    ylab('Percentage of Rating') +
+    xlab('ProsperRating(Alpha)') +
+    ggtitle("Percentage of Rating", 
+            subtitle = "for different rating") +
+    theme(plot.title = element_text(face = 'bold.italic', 
+                                    colour = 'darkblue', 
+                                    size=25),
+          plot.subtitle = element_text(face = 'bold', 
+                                       colour = '#87a0cc', 
+                                       size=15))
+    
+```
+  
+上图显示的是各个评级的客户分布情况，上图数据显示有25.5%的观测值是没有评级的，这让我好奇这些客户是否也能获得贷款？其实从这么大的占比我能猜测Prosper公司是不会让这部分客户流失的，我会对Prosper公司是怎么处理这些客户非常感兴趣。而其他评级呈现正太分布，多数人的评级集中在C评级，占比16.1%。
+
+## 借款人收入情况
+```{r}
+with(loanData, table(IncomeRange))
+```
+
+```{r}
+# IncomeRange 
+# 收入为零和Not employed归并为$0
+loanData$IncomeRange <- as.character(loanData$IncomeRange)
+loanData$IncomeRange[loanData$IncomeRange %in% c("$0", "Not employed")] <- "$0"
+# 排序
+loanData$IncomeRange <- ordered(loanData$IncomeRange,
+                                                levels = c("$0",
+                                                           "$1-24,999",
+                                                           "$25,000-49,999",
+                                                           "$50,000-74,999",
+                                                           "$75,000-99,999",
+                                                           "$100,000+",
+                                                           "Not displayed"))
+# 分组统计不同收入范围的占比
+df_MonthlyIncome <- loanData %>%
+    group_by(IncomeRange) %>%
+    summarise(n = n()) %>%
+    mutate(freq = n / sum(n) * 100) %>%
+    arrange(IncomeRange)
+ 
+ggplot(aes(x = IncomeRange, y = freq, fill = freq), data = df_MonthlyIncome) +
+    geom_bar(stat = 'identity', position="dodge") +
+    geom_text(aes(label = sprintf("%2.1f%%", round(freq, 2))),
+                  color = "black", size = 5, nudge_y = 1.5) +
+    ylab('Percentage of IncomeRange') +
+    xlab('IncomeRange') +
+    ggtitle("Percentage of IncomeRange", 
+            subtitle = "for different IncomeRange") +
+    theme(plot.title = element_text(face = 'bold.italic', 
+                                    colour = '#6A5ACD', size=18),
+          plot.subtitle = element_text(face = 'bold', 
+                                       colour = '#17b4ba', size=11))
+
+```
+
+```{r echo=TRUE}
+summary(loanData$StatedMonthlyIncome)
+summary(loanData$LoanOriginalAmount)
+
+```
+
+
+上图显示了不同收入的客户的贷款百分比分布，而这些客户的年收入主要集中在\$25000-\$74999范围，超过一半，其次则是高收入人群，占比30%，收入较低的人群的贷款占比很少。StatedMonthlyIncome也应该有类似的分布，但是月收入最大值为175万，而贷款额最大值仅为3500美元，月收入1750003的人也需要贷款吗？实际这个数值是4000美元，我不愿意相信月收入这么高的人需要贷款4000美元，这个数据值得怀疑，在后续处理中我将删除这个异常值进行分析。
+
+# **双变量分析**
+```{r}
+ggplot(aes(x = IncomeRange, y = StatedMonthlyIncome), data = loanData) +
+    geom_boxplot()
+```
+
+
+
+```{r}
+# 不同收入范围的客户的贷款额度
+ggplot(aes(x = IncomeRange, y = LoanOriginalAmount), 
+                         data = loanData) +
+    geom_boxplot()
+# 计算相关系数：收入和贷款额度
+with(loanData, cor.test(StatedMonthlyIncome, LoanOriginalAmount))
+```
+
+从收入范围来观察不同收入的人获得的贷款额度，并不能说明高收入的人有更高的额度，计算相关系数0.20也表明这种相关性很小，我们剔除那个最大异常值再试试：
+
+```{r}
+with(subset(loanData, StatedMonthlyIncome != max(StatedMonthlyIncome)), 
+     cor.test(StatedMonthlyIncome, LoanOriginalAmount))
+```
+
+相关系数为0.28有所提高，说明贷款额度还是受收入一定的影响的，而箱线图重叠部分很多，说明还有其它变量影响着贷款额度。还有一点，收入范围10000以下的贷款额度最大值均小于25000,10000以上的贷款额度也有限制为35000，没有显示收入范围的客户贷款额度最大值被限制在25000。
+
+
+
+
+
+
+
+
+### 不同评级客户的贷款额度
+```{r}
+#不同评级客户的贷款额度
+loanData$ProsperRating..Alpha.<- ordered(loanData$ProsperRating..Alpha.,
+            levels = c("AA","A","B","C","D","E","HR","NA"))
+ggplot(data = loanData, aes(x = ProsperRating..Alpha.,
+                            y = LoanOriginalAmount)) + 
+    geom_boxplot(alpha = 0.05)
+```
+
+
+
+
+
+```{r}
+# 计算相关系数：数值评级和贷款额度
+with(loanData, cor.test(ProsperRating..numeric., LoanOriginalAmount,
+                        method = 'pearson'))
+```
+
+上图表明客户贷款本金与评级呈现弱相关性,相关系数0.43，相对来说高评级有高额度，C以上评级的贷款额度中位数都超过10000，其它评级D、E、HR、NA基本都小于10000额度，而没有评级的客户有很多异常值分布在10000以上。不同评级的贷款额度同样有很多重叠部分，而且不同评级的贷款额度也都好像有一定的额度限制，B评级以上最大值为35000，C评级最大值为25000，D评级不超过15000，从以上最大值似乎能感觉到贷款额度有所限制，查阅相关资料显示确实如此，最高贷款额度由借款人的评级决定，不同等级的最高贷款额度为：  
+AA        35000  
+A         35000  
+B         35000  
+C         30000  
+D         25000  
+E         10000  
+HR        7500    
+观察HR评级的箱线图发现部分样本点超过了限定额度，或许是这些客户原本有更高的评级，因为违约等原因被下降评级了吧，不然还会有其它原因吗！
+
+
+### 不同评级的贷款利率 
+```{r}
+# 不同评级的贷款利率
+loanData$ProsperRating..Alpha.<- ordered(loanData$ProsperRating..Alpha.,
+            levels = c("AA","A","B","C","D","E","HR","NA"))
+ggplot(data = loanData, aes(x = ProsperRating..Alpha.,
+                            y = BorrowerRate)) + 
+    geom_boxplot(alpha = 1 / 20)
+
+
+```
+
+```{r}
+with(subset(loanData, !is.na(ProsperRating..numeric.)), 
+     cor.test(ProsperRating..numeric., BorrowerRate))
+```
+
+图中展示了不同评级的客户的贷款利率，发现评级与贷款利率有很强的负相关性，与之前的两个箱线图不同的是，重叠部分少很多，且我们使用数值评级ProsperRating(numeric)计算相关系数为-0.95，这表明，评分越高的客户容易获得低的贷款利率,评级与贷款利率之间有很强的相关性。
+
+
+
+### 贷款期数
+```{r}
+loanData %>%
+    ggplot(aes(x = Term / 12)) +
+        geom_histogram(binwidth = 1) +
+        theme_hc() +
+        xlab('Term in years') +
+        ylab('count') +
+        scale_x_continuous(breaks = seq(1, 5, 2)) +
+        ggtitle("Disribution loan terms")
+```
+
+### 查看LonaStatus变量的分布： 
+```{r}
+# 排序
+loanData$LoanStatus <- ordered(loanData$LoanStatus, levels = c("Past Due (>120 days)",
+                                                               "Past Due (91-120 days)",
+                                                               "Past Due (61-90 days)",
+                                                               "Past Due (31-60 days)",
+                                                               "Past Due (16-30 days)",
+                                                               "Past Due (1-15 days)",
+                                                               "FinalPaymentInProgress",
+                                                               "Defaulted",
+                                                               "Current",
+                                                               "Completed",
+                                                               "Chargedoff",
+                                                               "Cancelled"))
+loanData %>%
+    group_by(LoanStatus) %>%
+    summarise(n = n()) %>%
+    ggplot(aes(x = LoanStatus, y = n)) +
+    geom_bar(stat = 'identity', position="dodge") +
+    theme_pander() +
+    ylab("Number of borrowers") +
+    xlab("Different Loan Status") +
+    coord_flip()
+```
+  
+  
+
+
+```{r}
+# 对数据集按ProsperRating和LoanStatus分组
+loanData.two_status <- loanData %>%
+    group_by(ProsperRating..Alpha., LoanStatus) %>%
+    summarise(n = n())
+
+loanData.two_status$LoanStatus <- as.character(loanData.two_status$LoanStatus)
+# 逾期数据归并到PastDue
+loanData.two_status$LoanStatus[loanData.two_status$LoanStatus %in% 
+                                 c("Past Due (1-15 days)",
+                                   "Past Due (16-30 days)", 
+                                   "Past Due (31-60 days)",
+                                   "Past Due (61-90 days)",
+                                   "Past Due (91-120 days)",
+                                   "Past Due (>120 days)")] <- "PastDue"
+# 有贷款申请且无不良记录的数据集归并到Completed
+loanData.two_status$LoanStatus[loanData.two_status$LoanStatus %in% 
+                                 c("Completed",
+                                   "Current",
+                                   "Defaulted",
+                                   "FinalPaymentInProgress")] <- "Completed"
+# 注销账户的数据集归并到Cancelled
+loanData.two_status$LoanStatus[loanData.two_status$LoanStatus %in%
+                                     c("Cancelled", "Chargedoff")] <- "Cancelled"
+loanData.two_status <- loanData.two_status %>%
+    group_by(ProsperRating..Alpha., LoanStatus) %>%
+    summarise(p = n(), total = sum(n)) %>%
+    mutate(freq = round(total / sum(total) * 100, 2))
+
+
+loanData.two_status$ProsperRating..Alpha. <- ordered(loanData.two_status$ProsperRating..Alpha.,
+                                           levels = c("AA","A","B","C","D","E","HR","NULL"))
+
+ggplot(aes(x = ProsperRating..Alpha., y = freq, fill = LoanStatus), 
+       data = loanData.two_status) +
+    geom_bar(stat = 'identity', position="stack", color = 'black') + 
+    xlab('ProsperRating(Alpha)') + 
+    theme_pander() +
+    coord_flip() +
+    ggtitle("LoanStatus: Completed & Cancelled & PastDue", 
+            subtitle = "for each loan Rating") +
+    theme(plot.title = element_text(face = 'bold.italic', 
+                                    colour = '#F35E3A', size=18),
+          plot.subtitle = element_text(face = 'bold', 
+                                       colour = '#17b4ba', size=11)) +
+    ylab("% of Borrowers") 
+```
+
+通过客户贷款状态的统计发现客户贷款行为可以归并为3类：Cancelled、Completed和PastDue，然后再根据不同的评级进行统计如图所示，随着低评级HR到高评级AA，逾期客户PastDue和Cancelled的占比越来越小，中间绿色部分为无不良贷款记录的客户占比越来越大。从而证明了具有好的评级的客户能获得更低的贷款利率和更高的贷款额度，原因就是好的评级的客户信用良好。有意思的是没有评级的客户中没有逾期客户，出现两极分化，要么信用优良要么账户被注销。
+
+
+
+
+
+### 不同期限的贷款额度
+```{r}
+# 不同期限的贷款额度
+ggplot(aes(x = Term / 12, y = LoanOriginalAmount, group = Term), data = loanData) +
+    geom_boxplot() + 
+    scale_x_continuous(breaks = seq(1, 5, 2)) + 
+    xlab('Term in years')
+```
+  
+事实证明，长期贷款能够获得更高的额度，但是也不总是这样，图中可以看到箱线图有重叠部分，由此可以说明贷款期限也是影响贷款额度的因素之一。
+
+# **多变量分析**
+
+```{r}
+# 选择数据 
+model <- loanData %>%
+    dplyr::select(MonthlyLoanPayment, 
+                  LoanOriginalAmount,
+                  DebtToIncomeRatio,
+                  ProsperRating..numeric.,
+                  BorrowerRate,
+                  Term) %>%
+    filter(!is.na(MonthlyLoanPayment), !is.na(LoanOriginalAmount),
+           MonthlyLoanPayment != 0.0, LoanOriginalAmount != 0.0, 
+           MonthlyLoanPayment != "", LoanOriginalAmount != "", 
+           !is.na(DebtToIncomeRatio), DebtToIncomeRatio != "",
+           !is.na(ProsperRating..numeric.),
+           !is.na(BorrowerRate))
+
+str(model)
+```
+
+
+
+
+### 计算散点图矩阵
+```{r}
+ggpairs(model,lower= list(continuous = wrap("points", shape = I('.'))),
+        upper = list(combo = wrap("box", outlier.shape = I('.'))))
+
+```
+
+
+
+
+
+
+
+### 模型1：月还款额与贷款额度
+从散点图矩阵观察到LoanOriginalAmount与MonthlyLoanPayment之间具有很强的相关性，创建一个线性模型进一步探索。
+
+```{r}
+ggplot(aes(x = LoanOriginalAmount, y = MonthlyLoanPayment), 
+       data = model) +
+    geom_point(position = "jitter", alpha = 1/2) +
+    theme_hc() +
+    ggtitle("Correlation of MonthlyLoanPayment vs LoanOriginalAmount") +
+    geom_smooth(method = 'lm') + 
+    theme(plot.title = element_text(face = 'bold.italic', 
+                                    colour = 'darkblue', 
+                                    size=15))
+
+m1 <- lm(MonthlyLoanPayment ~ LoanOriginalAmount, data = model)
+summary(m1)
+```
+
+从结果中发现拟合效果不是很理想，所以加入更多的变量来改进模型：  
+1. LoanOriginalAmount  
+2. DebtToIncomeRatio  
+3. ProsperRating..numeric.  
+4. Term  
+5. BorrowerRate   
+
+
+### 模型2
+```{r}
+# Creating the improved Linear Model
+
+m2 <- lm(MonthlyLoanPayment ~ LoanOriginalAmount + 
+               DebtToIncomeRatio + 
+               ProsperRating..numeric. +
+               Term + BorrowerRate,data = model)
+summary(m2)
+
+```
+
+加入其它变量后的模型调整后的R平方93.16%，比原来提高了很多，说明模型2拟合度更优，剩余标准差也减少了很多，达到49.31。从系数值可以看到，除了Term其它变量都具有正系数，因为随着期限增加，每月还款额就会减少，这是符合逻辑的。
+
+
+
+# **总结**
+## 1.贷款类型
+```{r plot}
+categories <- c("Debt\nConsolidation", "Home\nImprovement", "Business",
+               "Personal\nLoan", "Student Use", "Auto",
+               "Other", "Baby", "Boat",
+               "Cosmetic\nProcedure", "Engagement\nRing", "Green\nLoans",
+               "Household\nExpenses", "Large\nPurchases", "Medical",
+               "Motorcycle", "RV", "Taxes", "Vaccation", "Wedding\nLoans")
+mapBorrowerCategory <- function(categoryNumber) {
+    ifelse(categoryNumber == 0, 'na', categories[categoryNumber])
+}
+
+loanData.reasons <- loanData %>%
+    group_by(ListingCategory..numeric.) %>%
+    summarise(n = n()) %>%
+    filter(ListingCategory..numeric. != 0) %>%
+    mutate(category = mapBorrowerCategory(ListingCategory..numeric.), 
+           freq = n / sum(n) * 100) %>%
+    arrange(n) %>%
+    dplyr::select(-ListingCategory..numeric.)
+
+loanData.reasons$category <- factor(loanData.reasons$category)
+ggplot(aes(x = reorder(category, freq), y = freq, fill = freq), 
+       data = loanData.reasons) +
+    geom_bar(stat = 'identity', position="dodge") +
+    theme_pander() +
+    scale_fill_gradient(low = 'lightblue', high = 'darkblue') +
+    coord_flip() +
+    guides(fill=FALSE) +
+    geom_text(aes(label = sprintf("%2.1f%%", round(freq, 2))), 
+              color="black", size = 4, nudge_y = 3) +
+    ylab('Percentage of borrowers') +
+    xlab('Loan Categories') +
+    theme(axis.text.y = element_text(face = 'bold.italic', 
+                                     colour = 'darkblue',
+                                     size = '7')) +
+    ggtitle("People Loan to repay Loans", 
+            subtitle = "this is why people loan!!") +
+    theme(plot.title = element_text(face = 'bold.italic', 
+                                    colour = 'darkblue', 
+                                    size=25),
+          plot.subtitle = element_text(face = 'bold', 
+                                       colour = 'lightskyblue', 
+                                       size=15)) +
+    scale_y_continuous(breaks = seq(0, 100, 5))
+```
+
+相关资料显示以上数据均为个人信用贷款，种类包括：债务整合贷款、住房装修贷款、车贷、婚礼贷款等。但借款人申请贷款不能用于：1）购买、持有或交易证券，或者购买或持有任何投资合约证券；2）支付高等教育的教育费用，如大学学费、住宿费等。
+从上图显示人们贷款主要用途为：
+  
+1）    债务整合（约60.1%）  
+
+2）    住房改善（约7.7%）  
+
+3）    商业用途（约7.4%）  
+
+4）    购买汽车（约2.6%）  
+
+5）    其他（约22.2%）  
+
+数据显示60.1%的人拿贷款偿还贷款/债务，这是一个非常大的比例，而贷款人仍向这些人发放贷款，不是陷入了恶性循环吗？
+
+
+## 2.不同评级的贷款利率
+
+```{r}
+# 不同评级的贷款利率
+loanData$ProsperRating..Alpha.<- ordered(loanData$ProsperRating..Alpha.,
+            levels = c("AA","A","B","C","D","E","HR","NA"))
+ggplot(data = loanData, aes(x = ProsperRating..Alpha.,
+                            y = BorrowerRate)) + 
+    geom_boxplot(alpha = 1 / 20)
+
+
+```
+
+图中展示了不同评级的客户的贷款利率，发现评级与贷款利率有很强的负相关性，这表明，评分越高的客户容易获得低的贷款利率,这也解释了利率作为资金的风险补偿，对于信用风险越大的客户收取更多的利息来作为借款人违约代价，这是合乎情理的。所以投资者同样愿意借款给信用评级较低的借款人，只不过他们会收取更高额的利息，很高明的手段。
+
+## 3.月还款额与贷款额度关系
+
+```{r}
+model$Term <- factor(model$Term)
+ggplot(aes(x = LoanOriginalAmount, y = MonthlyLoanPayment, fill = Term), 
+       data = model) +
+    geom_point(shape = 21, col = "black", size = 2, 
+               position = "jitter", alpha = 1/2) +
+    scale_fill_manual(values = c("#900C3F", "#FF5733", "#FFC300")) +
+    theme_hc() +
+    geom_smooth(se = F, aes(color = Term)) +
+    ggtitle("How MonthlyLoanPayment & LoanOriginalAmount Related?",
+            subtitle = "Precursor to our regression model") +
+    theme(plot.title = element_text(face = 'bold.italic', 
+                                    colour = 'darkblue', 
+                                    size=15),
+          plot.subtitle = element_text(face = 'bold', 
+                                       size = 12, 
+                                       colour = "#87a0cc")) +
+    xlab("Actual Loan amount") +
+    ylab("Monthly Loan payment")
+```
+
+上图很好的拟合了不用期限下贷款额度与月还款额之间的关系，加入多个变量后的改进模型拥有很好的调整后的R平方值，达到93.16%。
+
+# **反思**
+拿到数据集之后对于81个变量的定义让我感到困惑，有些变量的定义并没有那么清楚，或许这跟所处的行业和经验有关，通过查阅资料渐渐让我了解Prosper公司的贷款业务模式，这让我对数据有了更深入的了解，尤其是更好的理解各个变量。  
+
+在对数据中的变量进行探索过程中，我只探索了部分感兴趣的变量，或许还有很多相关性没有发现，不过在实际应用中，我觉得还是要对全部的数值型变量进行散点图矩阵绘图，虽然这在R中运行很费时间，不过绘制相关系数矩阵也是不错的办法，这能更快速的找出有关系的变量，然后再进行更深入的分析，这会让EDA节约很多时间，当然本次的探索过程以模板为主，为了强化这部分知识的掌握程度。
+
+
+## 参考资料
+1. [美国P2P平台Prosper详解](http://sping012.lofter.com/post/165369_618fa5d)
+2. [Markdown 语法说明](https://www.appinn.com/markdown/)
+3. [Web colors](https://en.wikipedia.org/wiki/Web_colors)
+
+
+
+
+
+
+
+
+
+
+
+
+
+

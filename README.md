@@ -1,3 +1,3 @@
 # DataAnalysis
 数据分析项目
-点击prosperLoanDataAnalysis-quan.html查看项目内容
+点击prosperLoanDataAnalysis-quan.html查看项目内容，若不行请下载prosperLoanData.zip查看
